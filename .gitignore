@@ -1,0 +1,23 @@
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Large experiment outputs
+/experiments/
+/runs/
+
+# Dataset and extracted features
+/datasets/
+/downloads/
+/data/features/
+
+# Model checkpoints
+*.t7
+*.pt
+*.pth
+*.ckpt
+
+# Backup files
+*.bak

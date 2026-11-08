@@ -26,9 +26,8 @@ def filter_checkpoints(model_dir, suffix='t7', max_to_keep=5):
     model_paths = glob.glob(os.path.join(model_dir, '*.{}'.format(suffix)))
     if len(model_paths) > max_to_keep:
         model_file_dict = dict()
-        suffix_len = len(suffix) + 1
         for model_path in model_paths:
-            step = int(os.path.basename(model_path).split('_')[1][0:-suffix_len])
+            step = int(os.path.splitext(os.path.basename(model_path))[0].rsplit('_', 1)[-1])
             model_file_dict[step] = model_path
         sorted_tuples = sorted(model_file_dict.items())
         unused_tuples = sorted_tuples[0:-max_to_keep]
@@ -41,7 +40,7 @@ def get_last_checkpoint(model_dir, suffix='t7'):
     model_file_dict = dict()
     suffix_len = len(suffix) + 1
     for model_filename in model_filenames:
-        step = int(os.path.basename(model_filename).split('_')[1][0:-suffix_len])
+        step = int(os.path.splitext(os.path.basename(model_filename))[0].rsplit('_', 1)[-1])
         model_file_dict[step] = model_filename
     sorted_tuples = sorted(model_file_dict.items())
     last_checkpoint = sorted_tuples[-1]
