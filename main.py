@@ -258,14 +258,23 @@ if configs.mode.lower() == 'train':
             # Padded positions are excluded by video_mask; the audio branch keeps IMG's
             # original importance-aware boola weighting, just like its CE/KD losses.
             if configs.w_cdl > 0.0:
-                cdl_loss_av = uniform_cdl_loss(start_logits_av, s_labels, video_mask) + \\
-                              uniform_cdl_loss(end_logits_av, e_labels, video_mask)
-                cdl_loss_v = uniform_cdl_loss(start_logits_v, s_labels, video_mask) + \\
-                             uniform_cdl_loss(end_logits_v, e_labels, video_mask)
-                cdl_loss_a = uniform_cdl_loss(start_logits_a, s_labels, video_mask) + \\
-                             uniform_cdl_loss(end_logits_a, e_labels, video_mask)
-                cdl_loss = cdl_loss_av.mean() + cdl_loss_v.mean() + \\
-                           torch.sum(boola * cdl_loss_a) / (valid + 1e-6)
+                cdl_loss_av = (
+                    uniform_cdl_loss(start_logits_av, s_labels, video_mask)
+                    + uniform_cdl_loss(end_logits_av, e_labels, video_mask)
+                )
+                cdl_loss_v = (
+                    uniform_cdl_loss(start_logits_v, s_labels, video_mask)
+                    + uniform_cdl_loss(end_logits_v, e_labels, video_mask)
+                )
+                cdl_loss_a = (
+                    uniform_cdl_loss(start_logits_a, s_labels, video_mask)
+                    + uniform_cdl_loss(end_logits_a, e_labels, video_mask)
+                )
+                cdl_loss = (
+                    cdl_loss_av.mean()
+                    + cdl_loss_v.mean()
+                    + torch.sum(boola * cdl_loss_a) / (valid + 1e-6)
+                )
                 total_loss += configs.w_cdl * cdl_loss
                 sum_cdl_loss += cdl_loss.detach().item()
 
