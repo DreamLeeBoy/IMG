@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from model.IMGNet import IMGNet,IMGNet4VLM, build_optimizer_and_scheduler
+from model.losses import uniform_cdl_loss
 from util.data_util import load_i3d_video_features,load_internvideo_features,load_video_clip_sf_features, save_json, load_json, load_audio_features,fix_json
 from util.data_gen import gen_or_load_dataset
 from util.data_gen_iv2 import gen_or_load_dataset_iv2
@@ -21,6 +22,8 @@ faulthandler.enable()
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--lamb', type=float, default=1, help='the lambda in loss function')
+parser.add_argument('--w_cdl', type=float, default=0.0,
+                    help='weight of Uniform Complementary Dissimilarity Loss (0 disables CDL; paper setting: 1.0)')
 parser.add_argument('--test_path', type=str, default=None, help='the path of the trained model when testing')
 parser.add_argument("--save_predictions",type=str,default=None,help='the path to save predictions')
 
@@ -192,6 +195,7 @@ if configs.mode.lower() == 'train':
         sum_a_loss=0
         sum_v_loss=0
         sum_kl_loss=0
+        sum_cdl_loss=0
         sum_valid=0
         warm = exp_up.get_value(epoch)
         p_warm = p_up.get_value(epoch)
@@ -249,6 +253,22 @@ if configs.mode.lower() == 'train':
             sum_valid=sum_valid+labela.shape[0]-valid
 
             total_loss =  loc_loss_av.mean()+ loc_loss_v.mean() + torch.sum(boola*loc_loss_a)/(valid+1e-6) # location loss
+
+            # Uniform CDL is applied to every valid temporal class (excluding the GT index).
+            # Padded positions are excluded by video_mask; the audio branch keeps IMG's
+            # original importance-aware boola weighting, just like its CE/KD losses.
+            if configs.w_cdl > 0.0:
+                cdl_loss_av = uniform_cdl_loss(start_logits_av, s_labels, video_mask) + \\
+                              uniform_cdl_loss(end_logits_av, e_labels, video_mask)
+                cdl_loss_v = uniform_cdl_loss(start_logits_v, s_labels, video_mask) + \\
+                             uniform_cdl_loss(end_logits_v, e_labels, video_mask)
+                cdl_loss_a = uniform_cdl_loss(start_logits_a, s_labels, video_mask) + \\
+                             uniform_cdl_loss(end_logits_a, e_labels, video_mask)
+                cdl_loss = cdl_loss_av.mean() + cdl_loss_v.mean() + \\
+                           torch.sum(boola * cdl_loss_a) / (valid + 1e-6)
+                total_loss += configs.w_cdl * cdl_loss
+                sum_cdl_loss += cdl_loss.detach().item()
+
             total_loss += configs.sa_lamb * (torch.sum(boola*as_loss)+avs_loss.sum()+vs_loss.sum())  # saliency loss
             total_loss += configs.kl_lamb * warm *(torch.sum(boola*kl_loss1)/(valid+1e-6)+kl_loss2.mean()) # kl loss
             total_loss += configs.ia_lamb * ga_loss             # Importantn-Aware Module loss 
@@ -266,6 +286,7 @@ if configs.mode.lower() == 'train':
                     tb_writer.add_scalar('v loss',sum_v_loss/num_train_batches,epoch)
                     tb_writer.add_scalar('a loss',sum_a_loss/num_train_batches,epoch)
                     tb_writer.add_scalar('kl loss',sum_kl_loss/num_train_batches,epoch)
+                    tb_writer.add_scalar('cdl loss',sum_cdl_loss/num_train_batches,epoch)
                     tb_writer.add_scalar('ga loss',sum_ga_loss/num_train_batches,epoch)
                 else:
                     eval_period+=num_train_batches
