@@ -72,6 +72,8 @@ parser.add_argument('--kl_lamb', type=float, default=10, help='KD lamb')
 parser.add_argument('--slot_layers', type=int, default=3, help='slotAtt layers')
 parser.add_argument('--max_n', type=int, default=2, help='saliency num')
 configs = parser.parse_args()
+if configs.w_cdl < 0.0:
+    parser.error('--w_cdl must be non-negative')
 
 if configs.task == 'charades' or configs.task == 'charadesAM':
     # I3D visual features
