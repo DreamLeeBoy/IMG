@@ -28,6 +28,98 @@ def get_mean_feature(feature,mask):
         mean_feature[i]=torch.mean(feature[i][:int(length[i])],dim=0)
     return mean_feature
 
+
+def compute_gt_aware_cdl_loss(
+        start_logits,
+        end_logits,
+        start_labels,
+        end_labels,
+        video_mask,
+        inside_weight=1.0,
+        outside_weight=2.0):
+
+    valid_mask = video_mask.bool()
+
+    batch_size, seq_len = start_logits.shape
+
+    positions = torch.arange(
+        seq_len, device=start_logits.device
+    ).unsqueeze(0)
+
+    inside_gt = (
+        (positions >= start_labels.unsqueeze(1)) &
+        (positions <= end_labels.unsqueeze(1))
+    )
+
+    def boundary_cdl(logits, labels):
+
+        weights = torch.full_like(
+            logits, outside_weight
+        )
+
+        weights = weights.masked_fill(
+            inside_gt, inside_weight
+        )
+
+        weights = weights * valid_mask.to(logits.dtype)
+
+        # 正确边界不参与互补分布
+        weights.scatter_(1, labels.unsqueeze(1), 0.0)
+
+        q = weights / weights.sum(
+            dim=1, keepdim=True
+        ).clamp_min(torch.finfo(logits.dtype).tiny)
+
+        # 互补预测分布
+        neg_logits = (-logits).masked_fill(
+            ~valid_mask,
+            torch.finfo(logits.dtype).min
+        )
+
+        log_probs = F.log_softmax(
+            neg_logits, dim=1
+        )
+
+        return -(q * log_probs).sum(dim=1)
+
+    # 分别计算起点和终点的 DCL
+    start_loss = boundary_cdl(
+        start_logits, start_labels
+    )
+
+    end_loss = boundary_cdl(
+        end_logits, end_labels
+    )
+
+    # 使用与实际推理相同的联合解码方式
+    with torch.no_grad():
+
+        pred_start, pred_end = ConditionedPredictor.extract_index(
+            start_logits, end_logits
+        )
+
+        # 分别判断起点和终点是否预测失败
+        start_wrong = pred_start.ne(start_labels)
+        end_wrong = pred_end.ne(end_labels)
+
+    # 只有预测失败的边界才启用 DCL
+    start_mask = start_wrong.float()
+    end_mask = end_wrong.float()
+
+    wrong_count = start_mask + end_mask
+
+    cdl_loss = (
+        start_loss * start_mask +
+        end_loss * end_mask
+    ) / wrong_count.clamp_min(1.0)
+
+    # 至少有一个边界预测错误
+    active_mask = wrong_count > 0
+
+    return cdl_loss, active_mask
+
+
+
 class IMGNet(nn.Module):
     def __init__(self, configs, word_vectors):
         super(IMGNet, self).__init__()
