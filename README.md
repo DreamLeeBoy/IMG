@@ -17,7 +17,26 @@ git pull --ff-only origin feature/uniform-cdl
 git status
 
 
+# 脚本运行
+cd /data/IMG_rebuild
 
+mkdir -p logs
+
+LOG_FILE="/data/IMG_rebuild/logs/uniform_cdl_$(date +%Y%m%d_%H%M%S).log"
+
+nohup env \
+    W_CDL=1.0 \
+    GPU_IDX=0 \
+    PYTHON_BIN="$CONDA_PREFIX/bin/python" \
+    bash run_img_uniform_cdl_seed0515.sh \
+    > "$LOG_FILE" 2>&1 < /dev/null &
+
+PID=$!
+
+echo "$PID" > /data/IMG_rebuild/logs/uniform_cdl.pid
+
+echo "PID: $PID"
+echo "LOG: $LOG_FILE"
 
 ## Training
 
