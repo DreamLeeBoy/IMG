@@ -1,10 +1,12 @@
 import os
 import argparse
+import math
+from functools import partial
 import torch
 import torch.nn as nn
 from tqdm import tqdm
 from model.IMGNet import IMGNet,IMGNet4VLM, build_optimizer_and_scheduler
-from model.losses import uniform_cdl_loss
+from model.losses import gaussian_cdl_loss, uniform_cdl_loss
 from util.data_util import load_i3d_video_features,load_internvideo_features,load_video_clip_sf_features, save_json, load_json, load_audio_features,fix_json
 from util.data_gen import gen_or_load_dataset
 from util.data_gen_iv2 import gen_or_load_dataset_iv2
@@ -23,7 +25,11 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--lamb', type=float, default=1, help='the lambda in loss function')
 parser.add_argument('--w_cdl', type=float, default=0.0,
-                    help='weight of Uniform Complementary Dissimilarity Loss (0 disables CDL; paper setting: 1.0)')
+                    help='weight of Complementary Dissimilarity Loss (0 disables CDL)')
+parser.add_argument('--cdl_type', choices=('uniform', 'gaussian'), default='uniform',
+                    help='CDL target construction: uniform (default) or gaussian')
+parser.add_argument('--gaussian_sigma', type=float, default=None,
+                    help='fixed global Gaussian bandwidth; required when gaussian CDL is enabled')
 parser.add_argument('--test_path', type=str, default=None, help='the path of the trained model when testing')
 parser.add_argument("--save_predictions",type=str,default=None,help='the path to save predictions')
 
@@ -74,6 +80,18 @@ parser.add_argument('--max_n', type=int, default=2, help='saliency num')
 configs = parser.parse_args()
 if configs.w_cdl < 0.0:
     parser.error('--w_cdl must be non-negative')
+if configs.cdl_type == 'gaussian' and configs.w_cdl > 0.0:
+    if configs.gaussian_sigma is None:
+        parser.error('--gaussian_sigma is required when --cdl_type gaussian and --w_cdl > 0')
+    if not math.isfinite(configs.gaussian_sigma) or configs.gaussian_sigma <= 0.0:
+        parser.error('--gaussian_sigma must be finite and greater than zero')
+
+# One fixed bandwidth is shared across all videos, branches, and Start/End heads.
+cdl_loss_fn = (
+    uniform_cdl_loss
+    if configs.cdl_type == 'uniform'
+    else partial(gaussian_cdl_loss, bandwidth=configs.gaussian_sigma)
+)
 
 if configs.task == 'charades' or configs.task == 'charadesAM':
     # I3D visual features
@@ -256,21 +274,21 @@ if configs.mode.lower() == 'train':
 
             total_loss =  loc_loss_av.mean()+ loc_loss_v.mean() + torch.sum(boola*loc_loss_a)/(valid+1e-6) # location loss
 
-            # Uniform CDL is applied to every valid temporal class (excluding the GT index).
-            # Padded positions are excluded by video_mask; the audio branch keeps IMG's
-            # original importance-aware boola weighting, just like its CE/KD losses.
+            # CDL is applied to every valid temporal class (excluding the GT index).
+            # The target construction is selected by --cdl_type. Padded positions
+            # are excluded; Audio retains IMG's original importance-aware boola weighting.
             if configs.w_cdl > 0.0:
                 cdl_loss_av = (
-                    uniform_cdl_loss(start_logits_av, s_labels, video_mask)
-                    + uniform_cdl_loss(end_logits_av, e_labels, video_mask)
+                    cdl_loss_fn(start_logits_av, s_labels, video_mask)
+                    + cdl_loss_fn(end_logits_av, e_labels, video_mask)
                 )
                 cdl_loss_v = (
-                    uniform_cdl_loss(start_logits_v, s_labels, video_mask)
-                    + uniform_cdl_loss(end_logits_v, e_labels, video_mask)
+                    cdl_loss_fn(start_logits_v, s_labels, video_mask)
+                    + cdl_loss_fn(end_logits_v, e_labels, video_mask)
                 )
                 cdl_loss_a = (
-                    uniform_cdl_loss(start_logits_a, s_labels, video_mask)
-                    + uniform_cdl_loss(end_logits_a, e_labels, video_mask)
+                    cdl_loss_fn(start_logits_a, s_labels, video_mask)
+                    + cdl_loss_fn(end_logits_a, e_labels, video_mask)
                 )
                 cdl_loss = (
                     cdl_loss_av.mean()
