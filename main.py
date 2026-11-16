@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from model.IMGNet import IMGNet,IMGNet4VLM, build_optimizer_and_scheduler
-from model.losses import gaussian_cdl_loss, uniform_cdl_loss
+from model.losses import gaussian_cdl_loss, uniform_cdl_loss, three_gaussian_joint_dcl_loss
 from util.data_util import load_i3d_video_features,load_internvideo_features,load_video_clip_sf_features, save_json, load_json, load_audio_features,fix_json
 from util.data_gen import gen_or_load_dataset
 from util.data_gen_iv2 import gen_or_load_dataset_iv2
@@ -26,10 +26,24 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--lamb', type=float, default=1, help='the lambda in loss function')
 parser.add_argument('--w_cdl', type=float, default=0.0,
                     help='weight of Complementary Dissimilarity Loss (0 disables CDL)')
-parser.add_argument('--cdl_type', choices=('uniform', 'gaussian'), default='uniform',
-                    help='CDL target construction: uniform (default) or gaussian')
+parser.add_argument('--cdl_type', choices=('uniform', 'gaussian', 'three_gaussian'), default='uniform',
+                    help='CDL target: uniform, gaussian v1.0, or three-Gaussian hierarchical joint CDL')
 parser.add_argument('--gaussian_sigma', type=float, default=None,
-                    help='fixed global Gaussian bandwidth; required when gaussian CDL is enabled')
+                    help='fixed global Gaussian bandwidth; required for gaussian CDL v1.0')
+parser.add_argument('--joint_iou_sigma', type=float, default=0.4,
+                    help='IoU-Gaussian bandwidth for three_gaussian CDL')
+parser.add_argument('--joint_beta', type=float, default=0.2,
+                    help='within-IoU-layer Start/End Gaussian energy strength')
+parser.add_argument('--joint_sigma_start_left', type=float, default=0.1,
+                    help='normalized Start-Gaussian bandwidth before the GT Start')
+parser.add_argument('--joint_sigma_start_right', type=float, default=0.2,
+                    help='normalized Start-Gaussian bandwidth after the GT Start')
+parser.add_argument('--joint_sigma_end_left', type=float, default=0.2,
+                    help='normalized End-Gaussian bandwidth before the GT End')
+parser.add_argument('--joint_sigma_end_right', type=float, default=0.1,
+                    help='normalized End-Gaussian bandwidth after the GT End')
+parser.add_argument('--joint_energy_normalization', choices=('none', 'zscore'), default='none',
+                    help='optional per-sample global standardization of joint Gaussian energy')
 parser.add_argument('--test_path', type=str, default=None, help='the path of the trained model when testing')
 parser.add_argument("--save_predictions",type=str,default=None,help='the path to save predictions')
 
@@ -86,12 +100,28 @@ if configs.cdl_type == 'gaussian' and configs.w_cdl > 0.0:
     if not math.isfinite(configs.gaussian_sigma) or configs.gaussian_sigma <= 0.0:
         parser.error('--gaussian_sigma must be finite and greater than zero')
 
-# One fixed bandwidth is shared across all videos, branches, and Start/End heads.
-cdl_loss_fn = (
-    uniform_cdl_loss
-    if configs.cdl_type == 'uniform'
-    else partial(gaussian_cdl_loss, bandwidth=configs.gaussian_sigma)
-)
+if configs.cdl_type == 'three_gaussian' and configs.w_cdl > 0.0:
+    joint_positive = {
+        '--joint_iou_sigma': configs.joint_iou_sigma,
+        '--joint_sigma_start_left': configs.joint_sigma_start_left,
+        '--joint_sigma_start_right': configs.joint_sigma_start_right,
+        '--joint_sigma_end_left': configs.joint_sigma_end_left,
+        '--joint_sigma_end_right': configs.joint_sigma_end_right,
+    }
+    for name, value in joint_positive.items():
+        if not math.isfinite(value) or value <= 0.0:
+            parser.error(f'{name} must be finite and greater than zero')
+    if not math.isfinite(configs.joint_beta) or configs.joint_beta < 0.0:
+        parser.error('--joint_beta must be finite and non-negative')
+
+# Legacy CDL paths remain unchanged. Three-Gaussian CDL is computed jointly
+# from Start/End logits at the original training-loss insertion point.
+if configs.cdl_type == 'uniform':
+    cdl_loss_fn = uniform_cdl_loss
+elif configs.cdl_type == 'gaussian':
+    cdl_loss_fn = partial(gaussian_cdl_loss, bandwidth=configs.gaussian_sigma)
+else:
+    cdl_loss_fn = None
 
 if configs.task == 'charades' or configs.task == 'charadesAM':
     # I3D visual features
@@ -274,22 +304,46 @@ if configs.mode.lower() == 'train':
 
             total_loss =  loc_loss_av.mean()+ loc_loss_v.mean() + torch.sum(boola*loc_loss_a)/(valid+1e-6) # location loss
 
-            # CDL is applied to every valid temporal class (excluding the GT index).
-            # The target construction is selected by --cdl_type. Padded positions
-            # are excluded; Audio retains IMG's original importance-aware boola weighting.
+            # CDL auxiliary supervision. Legacy Uniform/Gaussian v1.0 remain
+            # separate Start/End losses; three_gaussian uses one upper-triangular
+            # joint interval distribution without changing IMG's prediction heads.
             if configs.w_cdl > 0.0:
-                cdl_loss_av = (
-                    cdl_loss_fn(start_logits_av, s_labels, video_mask)
-                    + cdl_loss_fn(end_logits_av, e_labels, video_mask)
-                )
-                cdl_loss_v = (
-                    cdl_loss_fn(start_logits_v, s_labels, video_mask)
-                    + cdl_loss_fn(end_logits_v, e_labels, video_mask)
-                )
-                cdl_loss_a = (
-                    cdl_loss_fn(start_logits_a, s_labels, video_mask)
-                    + cdl_loss_fn(end_logits_a, e_labels, video_mask)
-                )
+                if configs.cdl_type == 'three_gaussian':
+                    joint_cdl_kwargs = {
+                        'iou_sigma': configs.joint_iou_sigma,
+                        'beta': configs.joint_beta,
+                        'sigma_start_left': configs.joint_sigma_start_left,
+                        'sigma_start_right': configs.joint_sigma_start_right,
+                        'sigma_end_left': configs.joint_sigma_end_left,
+                        'sigma_end_right': configs.joint_sigma_end_right,
+                        'energy_normalization': configs.joint_energy_normalization,
+                    }
+                    cdl_loss_av = three_gaussian_joint_dcl_loss(
+                        start_logits_av, end_logits_av, s_labels, e_labels,
+                        video_mask, **joint_cdl_kwargs
+                    )
+                    cdl_loss_v = three_gaussian_joint_dcl_loss(
+                        start_logits_v, end_logits_v, s_labels, e_labels,
+                        video_mask, **joint_cdl_kwargs
+                    )
+                    cdl_loss_a = three_gaussian_joint_dcl_loss(
+                        start_logits_a, end_logits_a, s_labels, e_labels,
+                        video_mask, **joint_cdl_kwargs
+                    )
+                else:
+                    cdl_loss_av = (
+                        cdl_loss_fn(start_logits_av, s_labels, video_mask)
+                        + cdl_loss_fn(end_logits_av, e_labels, video_mask)
+                    )
+                    cdl_loss_v = (
+                        cdl_loss_fn(start_logits_v, s_labels, video_mask)
+                        + cdl_loss_fn(end_logits_v, e_labels, video_mask)
+                    )
+                    cdl_loss_a = (
+                        cdl_loss_fn(start_logits_a, s_labels, video_mask)
+                        + cdl_loss_fn(end_logits_a, e_labels, video_mask)
+                    )
+
                 cdl_loss = (
                     cdl_loss_av.mean()
                     + cdl_loss_v.mean()
