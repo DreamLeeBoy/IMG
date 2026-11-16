@@ -91,6 +91,20 @@ class ThreeGaussianJointCDLTest(unittest.TestCase):
         self.assertTrue(torch.allclose(start_logits.grad, q.sum(2) - p.sum(2), atol=1e-6))
         self.assertTrue(torch.allclose(end_logits.grad, q.sum(1) - p.sum(1), atol=1e-6))
 
+    def test_precomputed_target_can_be_shared_across_branches(self):
+        target_q = three_gaussian_joint_targets(self.start, self.end, self.mask)
+        start_a = torch.randn(1, 5, requires_grad=True)
+        end_a = torch.randn(1, 5, requires_grad=True)
+        start_b = start_a.detach().clone()
+        end_b = end_a.detach().clone()
+        loss_generated = three_gaussian_joint_dcl_loss(
+            start_a, end_a, self.start, self.end, self.mask
+        )
+        loss_shared = three_gaussian_joint_dcl_loss(
+            start_b, end_b, self.start, self.end, self.mask, target_q=target_q
+        )
+        self.assertTrue(torch.allclose(loss_generated, loss_shared, atol=1e-7))
+
     def test_prediction_normalizer_includes_gt_interval(self):
         start_logits, end_logits = torch.zeros(1, 5), torch.zeros(1, 5)
         loss = three_gaussian_joint_dcl_loss(start_logits, end_logits, self.start, self.end, self.mask)
