@@ -1,3 +1,4 @@
+$$a^2+b^2=c^2$$
 # Gaussian-DCL v1.0：实现说明、数学定义与工程验收文档
 
 > 项目：IMG — Audio Does Matter: Importance-Aware Multi-Granularity Fusion for Video Moment Retrieval  
