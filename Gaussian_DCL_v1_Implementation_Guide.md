@@ -114,7 +114,7 @@ $$
 对定位头输出 logits `z_b`，沿用当前 Uniform CDL 的反向 logits 机制：
 
 $$
-q_{b,t}=\operatorname{Softmax}(-z_b)_t
+q_{b,t}=\mathrm{Softmax}(-z_b)_t
 $$
 
 实际计算时，先对 `-logits` 屏蔽 Padding，再做 `log_softmax`。这样可避免 IMG 定位头将 Padding logits 设为极小负数后，取负时变成极大正数的问题。
@@ -132,7 +132,7 @@ $$
 在目标分布 `r` 固定且不参与梯度传播时，令：
 
 $$
-q=\operatorname{Softmax}(-z),\qquad
+q=\mathrm{Softmax}(-z),\qquad
 \mathcal L_G=-\sum_t r_t\log q_t
 $$
 
