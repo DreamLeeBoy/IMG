@@ -278,19 +278,17 @@ gaussian_cdl_loss(logits, targets, valid_mask, bandwidth)
 
 分支聚合沿用当前实现：
 
-\[
- L_{CDL}=\operatorname{mean}(L_{AV,S}+L_{AV,E})
- +\operatorname{mean}(L_{V,S}+L_{V,E})
- +\frac{\sum_b boola_b(L_{A,S,b}+L_{A,E,b})}
- {\sum_b boola_b+10^{-6}}.
-\]
-
+$$
+L_{CDL}=\operatorname{mean}(L_{AV,S}+L_{AV,E})
++\operatorname{mean}(L_{V,S}+L_{V,E})
++\frac{\sum_b boola_b(L_{A,S,b}+L_{A,E,b})}
+{\sum_b boola_b+10^{-6}}.
+$$
 总损失增加项：
 
-\[
- L_{total}\leftarrow L_{total}+w_{CDL}L_{CDL}.
-\]
-
+$$
+L_{total}\leftarrow L_{total}+w_{CDL}L_{CDL}.
+$$
 这里保留了 IMG 原有 Audio 样本级重要性筛选 `boola`。它不是 GT 内外区域权重；本版本没有引入 GT 内外权重。
 
 ---
