@@ -167,7 +167,7 @@ The full joint target is not generally factorable into independent Start and End
 
 ## 6. IMG integration
 
-- AV, Visual, and Audio each receive their own Joint DCL loss from their own Start/End logits.
+- The GT-derived target Q is built once per batch and shared by AV, Visual, and Audio; each branch evaluates its own Start/End logits against that same Q.
 - The AV and Visual per-sample losses are averaged.
 - Audio keeps the original boola importance-aware weighting.
 - The original localization CE, saliency loss, KD loss, and Important-Aware loss are unchanged.
