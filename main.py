@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from model.IMGNet import IMGNet,IMGNet4VLM, build_optimizer_and_scheduler
-from model.losses import gaussian_cdl_loss, uniform_cdl_loss, three_gaussian_joint_dcl_loss
+from model.losses import gaussian_cdl_loss, uniform_cdl_loss, three_gaussian_joint_dcl_loss, three_gaussian_joint_targets
 from util.data_util import load_i3d_video_features,load_internvideo_features,load_video_clip_sf_features, save_json, load_json, load_audio_features,fix_json
 from util.data_gen import gen_or_load_dataset
 from util.data_gen_iv2 import gen_or_load_dataset_iv2
@@ -318,17 +318,22 @@ if configs.mode.lower() == 'train':
                         'sigma_end_right': configs.joint_sigma_end_right,
                         'energy_normalization': configs.joint_energy_normalization,
                     }
+                    # The target Q depends only on GT and video mask, not on
+                    # modality logits. Build it once and share it across AV/V/A.
+                    joint_target_q = three_gaussian_joint_targets(
+                        s_labels, e_labels, video_mask, **joint_cdl_kwargs
+                    )
                     cdl_loss_av = three_gaussian_joint_dcl_loss(
                         start_logits_av, end_logits_av, s_labels, e_labels,
-                        video_mask, **joint_cdl_kwargs
+                        video_mask, target_q=joint_target_q, **joint_cdl_kwargs
                     )
                     cdl_loss_v = three_gaussian_joint_dcl_loss(
                         start_logits_v, end_logits_v, s_labels, e_labels,
-                        video_mask, **joint_cdl_kwargs
+                        video_mask, target_q=joint_target_q, **joint_cdl_kwargs
                     )
                     cdl_loss_a = three_gaussian_joint_dcl_loss(
                         start_logits_a, end_logits_a, s_labels, e_labels,
-                        video_mask, **joint_cdl_kwargs
+                        video_mask, target_q=joint_target_q, **joint_cdl_kwargs
                     )
                 else:
                     cdl_loss_av = (
