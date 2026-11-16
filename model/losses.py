@@ -433,6 +433,7 @@ def three_gaussian_joint_dcl_loss(
     sigma_end_left=0.2,
     sigma_end_right=0.1,
     energy_normalization="none",
+    target_q=None,
 ):
     """Compute per-sample Joint Gaussian-DCL on IMG's legal interval space.
 
@@ -450,18 +451,27 @@ def three_gaussian_joint_dcl_loss(
     start_targets, end_targets, valid_mask, _ = _validate_joint_cdl_inputs(
         start_targets, end_targets, valid_mask.to(device=start_logits.device)
     )
-    target_q = three_gaussian_joint_targets(
-        start_targets=start_targets,
-        end_targets=end_targets,
-        valid_mask=valid_mask,
-        iou_sigma=iou_sigma,
-        beta=beta,
-        sigma_start_left=sigma_start_left,
-        sigma_start_right=sigma_start_right,
-        sigma_end_left=sigma_end_left,
-        sigma_end_right=sigma_end_right,
-        energy_normalization=energy_normalization,
-    )
+    if target_q is None:
+        target_q = three_gaussian_joint_targets(
+            start_targets=start_targets,
+            end_targets=end_targets,
+            valid_mask=valid_mask,
+            iou_sigma=iou_sigma,
+            beta=beta,
+            sigma_start_left=sigma_start_left,
+            sigma_start_right=sigma_start_right,
+            sigma_end_left=sigma_end_left,
+            sigma_end_right=sigma_end_right,
+            energy_normalization=energy_normalization,
+        )
+    else:
+        if not torch.is_tensor(target_q) or target_q.shape != (
+            start_logits.size(0), start_logits.size(1), start_logits.size(1)
+        ):
+            raise ValueError("target_q must have shape [batch_size, seq_len, seq_len]")
+        target_q = target_q.to(device=start_logits.device, dtype=torch.float32).detach()
+        if not torch.isfinite(target_q).all() or torch.any(target_q < 0.0):
+            raise ValueError("target_q must contain finite non-negative probabilities")
 
     batch_size, seq_len = start_logits.shape
     positions = torch.arange(seq_len, device=start_logits.device)
