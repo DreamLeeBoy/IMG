@@ -1,4 +1,3 @@
-$$a^2+b^2=c^2$$
 # Gaussian-DCL v1.0：实现说明、数学定义与工程验收文档
 
 > 项目：IMG — Audio Does Matter: Importance-Aware Multi-Granularity Fusion for Video Moment Retrieval  
@@ -50,9 +49,7 @@ $$a^2+b^2=c^2$$
 
 - 
 
-- $$
-  L_b：\text{该视频的有效时间位置数量；}
-  $$
+L_b：\text{该视频的有效时间位置数量；}
 
 - $$
   T：\text{当前 batch padding 后的时间维度；}
