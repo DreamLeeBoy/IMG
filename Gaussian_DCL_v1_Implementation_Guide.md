@@ -13,22 +13,22 @@
 
 ### 1.1 本版本已经确定的设计
 
-| 项目 | 当前实现 |
-|---|---|
-| 互补目标的中心 | 当前样本对应的 GT 时间位置 |
-| Start 标签 | `s_labels` |
-| End 标签 | `e_labels` |
-| 时间距离 | `abs(t - y) / (L - 1)`，其中 `L` 是该样本有效时间长度 |
-| Gaussian 相似度 | `exp(-d² / (2σ²))` |
-| 不相似度权重 | `1 - exp(-d² / (2σ²))` |
-| 互补目标 | 对所有有效非 GT 位置的不相似度权重归一化 |
-| 预测分布 | `softmax(-logits)`，沿用当前 Uniform CDL 的 DCL 预测方向 |
-| 带宽 | 一个固定正标量，全样本、AV/V/A、Start/End 共用 |
-| 带宽梯度 | 不参与反向传播，不是可学习参数 |
-| GT 内外权重 | 不引入 |
-| Padding | 从目标分布和反向 Softmax 中排除 |
-| Audio 分支 | 保留 IMG 原有 `boola` 样本级加权 |
-| 默认类型 | `uniform`，保证旧 Uniform CDL 调用兼容 |
+| 项目            | 当前实现                                                 |
+| --------------- | -------------------------------------------------------- |
+| 互补目标的中心  | 当前样本对应的 GT 时间位置                               |
+| Start 标签      | `s_labels`                                               |
+| End 标签        | `e_labels`                                               |
+| 时间距离        | `abs(t - y) / (L - 1)`，其中 `L` 是该样本有效时间长度    |
+| Gaussian 相似度 | `exp(-d² / (2σ²))`                                       |
+| 不相似度权重    | `1 - exp(-d² / (2σ²))`                                   |
+| 互补目标        | 对所有有效非 GT 位置的不相似度权重归一化                 |
+| 预测分布        | `softmax(-logits)`，沿用当前 Uniform CDL 的 DCL 预测方向 |
+| 带宽            | 一个固定正标量，全样本、AV/V/A、Start/End 共用           |
+| 带宽梯度        | 不参与反向传播，不是可学习参数                           |
+| GT 内外权重     | 不引入                                                   |
+| Padding         | 从目标分布和反向 Softmax 中排除                          |
+| Audio 分支      | 保留 IMG 原有 `boola` 样本级加权                         |
+| 默认类型        | `uniform`，保证旧 Uniform CDL 调用兼容                   |
 
 ### 1.2 本版本明确不做的事情
 
@@ -47,12 +47,31 @@
 
 对一个 batch 中的第 `b` 个视频样本，定义：
 
-- `L_b`：该视频的有效时间位置数量；
-- `T`：当前 batch padding 后的时间维度；
-- `y_b`：真实时间位置索引，Start 使用 `s_labels[b]`，End 使用 `e_labels[b]`；
-- `t`：候选时间位置索引；
-- `m_{b,t}`：有效位置掩码，有效位置为 1，Padding 为 0；
-- `σ`：所有样本和所有定位分支共用的固定 Gaussian 带宽。
+- 
+
+- $$
+  L_b：\text{该视频的有效时间位置数量；}
+  $$
+
+- $$
+  T：\text{当前 batch padding 后的时间维度；}
+  $$
+
+- $$
+  y_b：\text{真实时间位置索引，Start 使用 } s\_labels[b]\text{，End 使用 } e\_labels[b]\text{；}
+  $$
+
+- $$
+  t：\text{候选时间位置索引；}
+  $$
+
+- $$
+  m_{b,t}：\text{有效位置掩码，有效位置为 1，Padding 为 0；}
+  $$
+
+- $$
+  \sigma：\text{所有样本和所有定位分支共用的固定 Gaussian 带宽。}
+  $$
 
 当前实现假设 IMG 的 `video_mask` 是从有效长度生成的前缀掩码，即有效位置为 `[0, L_b-1]`。这与当前 IMG 数据加载和 `convert_length_to_mask(vfeat_lens)` 的使用方式一致。
 
@@ -60,10 +79,9 @@
 
 当 `L_b > 1` 时：
 
-\[
- d_{b,t}=\frac{|t-y_b|}{L_b-1}.
-\]
-
+$$
+d_{b,t}=\frac{|t-y_b|}{L_b-1}
+$$
 因此有效时间轴上的最大距离被归一化到 1。不同长度的视频使用相对时间尺度，而不是直接比较原始帧/片段索引距离。
 
 对于只有一个有效位置的样本，分母通过 `clamp_min(1)` 防止除零；该样本没有非 GT 类别，最终互补目标为全零，Gaussian-DCL 损失也为零。
@@ -72,76 +90,69 @@
 
 Gaussian 相似度：
 
-\[
- G_{b,t}=\exp\left(-\frac{d_{b,t}^{2}}{2\sigma^{2}}\right).
-\]
-
+$$
+G_{b,t}=\exp\left(-\frac{d_{b,t}^{2}}{2\sigma^{2}}\right)
+$$
 将其转换为不相似度权重：
 
-\[
- w_{b,t}=1-G_{b,t}
- =1-\exp\left(-\frac{d_{b,t}^{2}}{2\sigma^{2}}\right).
-\]
-
+$$
+w_{b,t}=1-G_{b,t}
+=1-\exp\left(-\frac{d_{b,t}^{2}}{2\sigma^{2}}\right).
+$$
 当 `t = y_b` 时，距离为 0，因此权重为 0。距离 GT 越远，未归一化的不相似度权重越大。
 
 ### 2.4 互补目标分布
 
 只在有效且非 GT 的位置上归一化：
 
-\[
- r_{b,t}=\begin{cases}
- \displaystyle\frac{w_{b,t}}
- {\sum_{j\in\mathcal V_b,\,j\ne y_b}w_{b,j}},
- &t\in\mathcal V_b,\ t\ne y_b,\\[10pt]
- 0,&\text{otherwise},
- \end{cases}
-\]
-
+$$
+r_{b,t}=
+\begin{cases}
+\displaystyle\frac{w_{b,t}}
+{\sum_{j\in\mathcal V_b,\,j\ne y_b}w_{b,j}},
+& t\in\mathcal V_b,\ t\ne y_b,\\[10pt]
+0, & \text{otherwise}.
+\end{cases}
+$$
 其中 `V_b` 表示样本 `b` 的有效时间位置集合。
 
 对于至少有两个有效时间位置的样本：
 
-\[
- r_{b,y_b}=0,\qquad
- \sum_t r_{b,t}=1.
-\]
-
+$$
+r_{b,y_b}=0,\qquad
+\sum_t r_{b,t}=1.
+$$
 该分布不是对原始分类标签做平滑，也不是把 GT 位置赋予概率质量；它是一个只覆盖非真实类别的互补目标分布。
 
 ### 2.5 DCL 预测分布与损失
 
 对定位头输出 logits `z_b`，沿用当前 Uniform CDL 的反向 logits 机制：
 
-\[
- q_{b,t}=\operatorname{Softmax}(-z_b)_t.
-\]
-
+$$
+q_{b,t}=\operatorname{Softmax}(-z_b)_t.
+$$
 实际计算时，先对 `-logits` 屏蔽 Padding，再做 `log_softmax`。这样可避免 IMG 定位头将 Padding logits 设为极小负数后，取负时变成极大正数的问题。
 
 Gaussian-DCL 单样本损失：
 
-\[
- \mathcal L_{G,b}=-\sum_t r_{b,t}\log q_{b,t}.
-\]
-
+$$
+\mathcal L_{G,b}=-\sum_t r_{b,t}\log q_{b,t}.
+$$
 返回 batch 内每个样本的 loss，而不是直接在函数内部求 batch mean。这是为了保留 IMG 现有 Audio 分支 `boola` 的逐样本加权逻辑。
 
 ### 2.6 梯度
 
 在目标分布 `r` 固定且不参与梯度传播时，令：
 
-\[
- q=\operatorname{Softmax}(-z),\qquad
- \mathcal L_G=-\sum_t r_t\log q_t.
-\]
-
+$$
+q=\operatorname{Softmax}(-z),\qquad
+\mathcal L_G=-\sum_t r_t\log q_t.
+$$
 对原始 logits `z_i` 求导：
 
-\[
- \boxed{\frac{\partial\mathcal L_G}{\partial z_i}=q_i-r_i.}
-\]
-
+$$
+\boxed{\frac{\partial\mathcal L_G}{\partial z_i}=q_i-r_i.}
+$$
 因此优化会推动反向 Softmax 分布 `q` 接近 Gaussian 构造的互补目标分布 `r`。注意这里的梯度是相对于原始 logits `z` 的梯度，不应误写成 `r-q`。
 
 ---
@@ -152,45 +163,40 @@ Gaussian-DCL 单样本损失：
 
 本版本只有一个 `--gaussian_sigma` 参数：
 
-\[
- \sigma_{AV,S}=\sigma_{AV,E}=\sigma_{V,S}=\sigma_{V,E}
- =\sigma_{A,S}=\sigma_{A,E}=\sigma.
-\]
-
+$$
+\sigma_{AV,S}=\sigma_{AV,E}=\sigma_{V,S}=\sigma_{V,E}
+=\sigma_{A,S}=\sigma_{A,E}=\sigma.
+$$
 同一个 batch 内所有视频也共享它。该参数是固定实验超参数，不被优化器更新。
 
 ### 3.2 小带宽极限
 
 当 `σ → 0+`，对任意非 GT 的有效位置（其距离严格大于 0）：
 
-\[
- w_{b,t}\rightarrow 1.
-\]
-
+$$
+w_{b,t}\rightarrow 1.
+$$
 因此：
 
-\[
- r_{b,t}\rightarrow\frac{1}{L_b-1},\quad t\ne y_b.
-\]
-
+$$
+r_{b,t}\rightarrow\frac{1}{L_b-1},\quad t\ne y_b.
+$$
 也就是趋近当前 Uniform CDL 使用的均匀互补目标。实现测试包含小带宽目标分布和 loss 向 Uniform CDL 靠近的验证。
 
 ### 3.3 大带宽极限
 
 当 `σ` 很大时，利用指数函数的一阶展开：
 
-\[
- 1-\exp\left(-\frac{d^2}{2\sigma^2}\right)
- \approx\frac{d^2}{2\sigma^2}.
-\]
-
+$$
+1-\exp\left(-\frac{d^2}{2\sigma^2}\right)
+\approx\frac{d^2}{2\sigma^2}.
+$$
 归一化后公共因子抵消，因此：
 
-\[
- r_{b,t}\rightarrow
- \frac{d_{b,t}^2}{\sum_{j\ne y_b}d_{b,j}^2}.
-\]
-
+$$
+r_{b,t}\rightarrow
+\frac{d_{b,t}^2}{\sum_{j\ne y_b}d_{b,j}^2}.
+$$
 即互补质量趋向按归一化距离平方分配。代码针对极大带宽下 float32 权重整体下溢的情况，使用这一极限分布作为数值稳定回退。
 
 ### 3.4 带宽不是越大或越小越好
@@ -207,16 +213,16 @@ Gaussian-DCL 单样本损失：
 
 ### 4.1 文件清单
 
-| 文件 | 修改 | 作用 |
-|---|---|---|
-| `main.py` | 修改 | 增加 CDL 类型和 Gaussian 带宽参数；在原 CDL 接入位置调用所选损失 |
-| `model/losses.py` | 修改 | 保留 `uniform_cdl_loss`，新增 Gaussian 目标构造与损失计算 |
-| `tests/test_gaussian_cdl.py` | 新增 | 验证 Gaussian 目标分布、loss、梯度、Mask、极限和非法输入 |
-| `tests/test_uniform_cdl.py` | 保留 | 回归检查已有 Uniform CDL |
-| `IMGNet.py` | 不修改 | 不改变三个定位分支 |
-| `layers.py` | 不修改 | 不改变 Start/End 分类头 |
-| `data_loader.py` | 不修改 | 沿用原有 GT 标签 |
-| `runner_utils.py` | 不修改 | 沿用现有 Mask 和评估流程 |
+| 文件                         | 修改   | 作用                                                         |
+| ---------------------------- | ------ | ------------------------------------------------------------ |
+| `main.py`                    | 修改   | 增加 CDL 类型和 Gaussian 带宽参数；在原 CDL 接入位置调用所选损失 |
+| `model/losses.py`            | 修改   | 保留 `uniform_cdl_loss`，新增 Gaussian 目标构造与损失计算    |
+| `tests/test_gaussian_cdl.py` | 新增   | 验证 Gaussian 目标分布、loss、梯度、Mask、极限和非法输入     |
+| `tests/test_uniform_cdl.py`  | 保留   | 回归检查已有 Uniform CDL                                     |
+| `IMGNet.py`                  | 不修改 | 不改变三个定位分支                                           |
+| `layers.py`                  | 不修改 | 不改变 Start/End 分类头                                      |
+| `data_loader.py`             | 不修改 | 沿用原有 GT 标签                                             |
+| `runner_utils.py`            | 不修改 | 沿用现有 Mask 和评估流程                                     |
 
 ### 4.2 新增命令行参数
 
@@ -247,12 +253,12 @@ gaussian_cdl_loss(logits, targets, valid_mask, bandwidth)
 
 输入形状：
 
-| 参数 | 形状 | 说明 |
-|---|---|---|
-| `logits` | `[B, T]` | 单个定位头的时间分类 logits |
-| `targets` | `[B]` | 每个样本的 GT 时间索引 |
-| `valid_mask` | `[B, T]` | 有效位置掩码 |
-| `bandwidth` | 标量 | 固定全局带宽 |
+| 参数         | 形状     | 说明                        |
+| ------------ | -------- | --------------------------- |
+| `logits`     | `[B, T]` | 单个定位头的时间分类 logits |
+| `targets`    | `[B]`    | 每个样本的 GT 时间索引      |
+| `valid_mask` | `[B, T]` | 有效位置掩码                |
+| `bandwidth`  | 标量     | 固定全局带宽                |
 
 输出：
 
@@ -273,19 +279,17 @@ gaussian_cdl_loss(logits, targets, valid_mask, bandwidth)
 
 分支聚合沿用当前实现：
 
-\[
- L_{CDL}=\operatorname{mean}(L_{AV,S}+L_{AV,E})
- +\operatorname{mean}(L_{V,S}+L_{V,E})
- +\frac{\sum_b boola_b(L_{A,S,b}+L_{A,E,b})}
- {\sum_b boola_b+10^{-6}}.
-\]
-
+$$
+L_{CDL}=\operatorname{mean}(L_{AV,S}+L_{AV,E})
++\operatorname{mean}(L_{V,S}+L_{V,E})
++\frac{\sum_b boola_b(L_{A,S,b}+L_{A,E,b})}
+{\sum_b boola_b+10^{-6}}.
+$$
 总损失增加项：
 
-\[
- L_{total}\leftarrow L_{total}+w_{CDL}L_{CDL}.
-\]
-
+$$
+L_{total}\leftarrow L_{total}+w_{CDL}L_{CDL}.
+$$
 这里保留了 IMG 原有 Audio 样本级重要性筛选 `boola`。它不是 GT 内外区域权重；本版本没有引入 GT 内外权重。
 
 ---
@@ -435,22 +439,22 @@ python main.py ... --w_cdl 0.0
 
 当前测试覆盖如下：
 
-| 测试 | 验证目标 |
-|---|---|
+| 测试                         | 验证目标                                             |
+| ---------------------------- | ---------------------------------------------------- |
 | 目标归一化与 GT/Padding 排除 | 每个有互补类的样本目标和为 1；GT 与 Padding 权重为 0 |
-| 距离单调性与对称性 | 距离更远的位置获得更大的互补目标权重；对称位置相等 |
-| 逐样本有效长度 | 变长视频按各自有效长度归一化 |
-| 手工 loss 对照 | 损失等于目标分布与 `log_softmax(-logits)` 的交叉熵 |
-| Padding 不影响 loss | 改变 Padding logits 不改变 loss，且 Padding 梯度为 0 |
-| 梯度公式 | 数值梯度符合 `q - r` |
-| 小带宽目标极限 | 目标分布趋近 Uniform one-cold 分布 |
-| 小带宽 loss 极限 | Gaussian-DCL loss 趋近当前 Uniform CDL loss |
-| 大带宽极限 | 目标分布趋近归一化距离平方分布 |
-| 极大带宽稳定性 | 极端数值下目标仍有限且归一化 |
-| 单有效位置 | 无互补类时 loss 和梯度为 0 |
-| GT 合法性 | 拒绝越界或落在 Padding 的 GT |
-| 带宽合法性 | 拒绝 0、负数、NaN、Inf 和可学习 Tensor |
-| Uniform 回归 | 原 Uniform CDL 相关测试仍然通过 |
+| 距离单调性与对称性           | 距离更远的位置获得更大的互补目标权重；对称位置相等   |
+| 逐样本有效长度               | 变长视频按各自有效长度归一化                         |
+| 手工 loss 对照               | 损失等于目标分布与 `log_softmax(-logits)` 的交叉熵   |
+| Padding 不影响 loss          | 改变 Padding logits 不改变 loss，且 Padding 梯度为 0 |
+| 梯度公式                     | 数值梯度符合 `q - r`                                 |
+| 小带宽目标极限               | 目标分布趋近 Uniform one-cold 分布                   |
+| 小带宽 loss 极限             | Gaussian-DCL loss 趋近当前 Uniform CDL loss          |
+| 大带宽极限                   | 目标分布趋近归一化距离平方分布                       |
+| 极大带宽稳定性               | 极端数值下目标仍有限且归一化                         |
+| 单有效位置                   | 无互补类时 loss 和梯度为 0                           |
+| GT 合法性                    | 拒绝越界或落在 Padding 的 GT                         |
+| 带宽合法性                   | 拒绝 0、负数、NaN、Inf 和可学习 Tensor               |
+| Uniform 回归                 | 原 Uniform CDL 相关测试仍然通过                      |
 
 ---
 
@@ -525,7 +529,9 @@ cp ../IMG_gaussian_backup/losses.py model/losses.py
 Gaussian-DCL v1.0 已实现一个明确的时间距离感知互补目标：GT 位置不接收互补目标质量，非 GT 有效位置根据其相对时间距离获得不同权重，并归一化为概率分布；预测端继续使用 `softmax(-logits)`，损失以逐样本形式返回并接入 IMG 现有三分支训练聚合。
 
 本版本的下一阶段不是立即宣称方法有效，而是完成本地代码应用、单元测试复跑、真实 batch 集成验收和小规模训练检查。带宽搜索和正式对比实验应在这些工程验收通过后再制定。
+
 ## 运行方式
+
 conda activate IMG
 先设置高斯带宽：export GAUSSIAN_SIGMA=0.1 这里的 0.1 仅为命令示例，不代表已经确定的实验参数。
 bash run_img_gaussian_dcl_v1_seed0515.sh
