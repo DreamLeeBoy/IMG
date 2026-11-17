@@ -11,7 +11,7 @@ The branch is feature/three-gaussian-hjcdl.
 For each sample with valid length L, let the ground-truth interval be inclusive indices (s*,e*). The legal interval set is
 
 $$
-\Omega=\{ (i,j):0\le i\le j<L \}.
+\Omega=\bigl\{ (i,j):0\le i\le j<L \bigr\}.
 $$
 The exact GT interval is excluded from the target support:
 
