@@ -125,6 +125,12 @@ then
     exit 2
 fi
 
+# Run the mathematical and gradient unit tests before expensive data loading.
+if ! "$PYTHON_BIN" -m unittest tests.test_three_gaussian_cdl -v; then
+    echo "[ERROR] Three-Gaussian Joint CDL unit tests failed; no experiment was started." >&2
+    exit 2
+fi
+
 # Resolve the dataset-cache directory for the GloVe/cache pre-check.
 if [[ "$SAVE_DIR" = /* ]]; then
     CACHE_ROOT="$SAVE_DIR"
