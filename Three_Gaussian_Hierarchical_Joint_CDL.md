@@ -27,8 +27,8 @@ Candidate IoU is computed using inclusive temporal indices:
 
 $$
 IoU(i,j)=
-\frac{|[i,j]\cap[s^{*},e^{*}]|}
-{|[i,j]\cup[s^{*},e^{*}]|}
+\frac{|[i,j]\cap[s^{\ast},e^{\ast}]|}
+{|[i,j]\cup[s^{\ast},e^{\ast}]|}
 $$
 
 ## 2. IoU Gaussian: dynamic layer mass
