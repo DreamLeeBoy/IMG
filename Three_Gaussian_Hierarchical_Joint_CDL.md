@@ -18,7 +18,7 @@ $$
 The exact GT interval is excluded from the target support:
 
 $$
-\Omega^-=\Omega-(s^{*},e^{*})
+\Omega^-=\Omega-(s^{\ast},e^{\ast})
 $$
 
 It remains in the prediction softmax denominator. Padding and lower-triangular pairs are excluded from both target and prediction distributions.
