@@ -126,7 +126,7 @@ then
 fi
 
 # Run the mathematical and gradient unit tests before expensive data loading.
-if ! "$PYTHON_BIN" -m unittest tests.test_three_gaussian_cdl -v; then
+if ! "$PYTHON_BIN" -m unittest discover -s tests -p 'test_*cdl*.py' -v; then
     echo "[ERROR] Three-Gaussian Joint CDL unit tests failed; no experiment was started." >&2
     exit 2
 fi
