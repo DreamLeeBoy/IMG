@@ -9,16 +9,16 @@ The branch is feature/three-gaussian-hjcdl.
 ## 1. Joint candidate space
 
 
-For each sample with valid length \(L\), let the ground-truth interval be inclusive indices \((s^*,e^*)\). The legal interval set is
+For each sample with valid length \(L\), let the ground-truth interval be inclusive indices \((s^{*},e^{*})\). The legal interval set is
 
 $$
-\Omega=\mathrm{Set}\left((i,j):0\le i\le j<L\right)
+\Omega=\mathrm{Set}((i,j):0\le i\le j<L)
 $$
 
 The exact GT interval is excluded from the target support:
 
 $$
-\Omega^-=\Omega-\{(s^*,e^*)\}.
+\Omega^-=\Omega-(s^{*},e^{*})
 $$
 
 It remains in the prediction softmax denominator. Padding and lower-triangular pairs are excluded from both target and prediction distributions.
@@ -27,8 +27,8 @@ Candidate IoU is computed using inclusive temporal indices:
 
 $$
 IoU(i,j)=
-\frac{|[i,j]\cap[s^*,e^*]|}
-{|[i,j]\cup[s^*,e^*]|}
+\frac{|[i,j]\cap[s^{*},e^{*}]|}
+{|[i,j]\cup[s^{*},e^{*}]|}
 $$
 
 ## 2. IoU Gaussian: dynamic layer mass
