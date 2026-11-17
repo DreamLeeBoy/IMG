@@ -39,7 +39,7 @@ B_1=[0,0.25),\quad B_2=[0.25,0.5),\quad
 B_3=[0.5,0.75),\quad B_4=[0.75,1).
 $$
 
-The GT interval is removed before counting. Let \(n_m=|B_m\cap\Omega^-|\) and let the bin centers be
+The GT interval is removed before counting. Let \(n_m=|B_m\cap\Omega^{-}|\) and let the bin centers be
 
 $$
 c=(0.125,0.375,0.625,0.875),\qquad \mu_I=0.
