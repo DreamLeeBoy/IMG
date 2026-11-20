@@ -1,0 +1,3 @@
+conda activate IMG
+bash iv2experience.sh
+
